@@ -1,0 +1,296 @@
+
+/////////////  ////          /////////////   ///             //////////  //////////  ///     ///
+    ////      ////          ////            ///                    ///  ///    ///  ///   ///
+   ////      ////          //////////////  ////////////  ////////////  //////////  /// ///
+  ////      ////                    ////  ///      ///  ///      ///  /// ///     ///    ///
+ ////      /////////////  /////////////  ///      ///  ////////////  ///   ///   ///       ///
+-----------------------------------------------------------------------------------------------------------
+
+
+
+Visión general
+--------------
+La idea principal es la de ofrecer una herramienta que permita testear la autenticación TLS de 
+un servidor en comunicaciones que siguen el esquema Cliente-Servidor. Para ello TLShark incluye 
+seis modos de funcionamiento. 
+
+El modo Verbose es un sniffer de red que filtra y muestra en detalle la información contenida en 
+los mensajes Client Hello, Server Hello y Certificate del protocolo TLS handshake, el modo Cerlog 
+se encarga de recoger toda la información necesaria para levantar un servidor ó proxy a partir de 
+una comunicación Cliente-Servidor, el modo Rogue se encarga de levantar un servidor a partir de 
+la información contenida en el archivo json generado por Cerlog, el modo Mitmproxy transparente
+levanta un proxy transparente, a modo de ataque "man-in-the-middle", a partir de la información 
+contenida en el archivo json generado por Cerlog, el modo Mitmproxy reverso puede levantar un 
+proxy en reverso, a modo de ataque "man-in-the-middle", a partir de una url correspondiente a un 
+servidor y finalmente, modo TLS version detector se encarga de levantar un servidor que acepta 
+peticiones para descubir la versión TLS de una máquina.
+
+
+> Al ejecutar el modo Verbose o Cerlog se generarán dos arboles de directorios. 
+	* tlshark_tmp se generará en la carpeta /tmp y sólo permanecerá en el sistema durante la 
+	  sesión actual. Este directorio contiene los certificiados captados (tanto por el modo 
+	  Verbose, como el modo Cerlog) y los certificados clonados por el modo Cerlog.
+	* tlshark_json se generará en el directorio desde donde se ejecura tlshark y se mantendrá 
+	  de forma permanente. Contiene los ficheros json que generan tanto el modo Verbose como el 
+	  modo Cerlog.
+
+> Si la comunicación usa TLS v1.3 el modo Cerlog no será capaz de captar la información de los
+  certificados y por tanto no se generará el archivo json correspondiente. Por otra parte, el modo 
+  Verbose no será capaz de captar los certificados. Todo esto se debe a que en TLS v1.3 los 
+  certificados se encuentran cifrados en la comunicación.
+
+> Si un archivo json ya existe a la hora de generar otro, se avisará con un mensaje de error y se
+  permitirá la opción de sobreescribir el archivo. Este mensaje aparecerá a menudo cuando ejecute 
+  el modo Cerlog a partir de un fichero tipo pcap, ya que cada comunicación contenida en este fichero 
+  será identificada con un ID, y este valor no cambiará en sucesivas ejecuciones.
+  
+> Para identificar las suites de cifrado TLS, el programa usa un diccionario incorporado en la librería 
+  de TLShark. Este diccionario también contiene la traducción a formato SSL de dichas suites de cifrado, 
+  que usa el modo Rogue para levantar el servidor. Es posible que en algún momento aparezca un mensaje 
+  de error si el servidor que pretende suplantar usa una cipher suite que no tiene traducción a formato 
+  SSl, esto sólo puede ocurrir si la categoría de la suite de cifrado es L o NR.
+  
+> Es importante tener en cuenta que al usar la bandera -pcap el programa cargará toda la información 
+  directamente del archivo.pcap, de forma que esta información estará sujeta a los parámetros de ip y 
+  puerto propios de la captura.
+
+> TLShark está pensado para ser usado en kali 2022.3 64bit de Linux, no existen garantías de que funcione 
+  correctamente en otras distribuciones.
+  
+> TLShark usa el software Apostille incluido en el comprimido; además también usa Python3 3.10.5, 
+  tsahrk 3.6.6, OpenSSL 3.0.4 y el software Mitmproxy version 8.0.0 que se encuentra disponible de forma 
+  nativa en Kali Linux.
+
+
+
+
+Instalación
+-----------
+Para instalar TLShark acceda al contenido de la carpeta TLShark y siga los siguientes pasos:
+
+	1.- Habitualmente los software Mitmproxy, OpenSSL y tshark se encuentran 
+	    preinstalados en Kali Linux. De no ser así, debe instalarlos.
+	    $ sudo apt install mitmproxy
+	    
+	    
+	2.- Copie la carpeta de apostille al path: /opt:
+	    $ sudo cp -r apostille /opt
+
+
+	3.- Instale el paquete tlshark-1.0.tar.gz.
+	    $ pip install tlshark-1.0.tar.gz
+	    
+	
+	    
+	4.- (Opcional/Recomendable) Al finalizar la instalación del paquete tlshark-1.0.tar.gz
+	    se indicará el directorio donde se encuentra tlshark. Tome este fichero y copielo
+	    a algún directorio de $PATH. 
+
+
+
+
+MODO VERBOSE: [-i, -sp, -ip, -sip, -cip, -client/-server/-all, -c, -pcap]
+-------------
+Este modo permite olfatear el tráfico intercambiado durante el tls handhake, captura información relevante 
+de los mensajes y la muestra paquete a paquete. 
+
+Banderas disponibles:
+	-i: interfaz de la maquina cliente, es decir, la maquina desde la que se está ejecutando TLShark. 
+	    Debe usarse el formato de tshark para indicar el argumento de esta bandera. eth0 por defecto.
+	-sp: puerto TCP de la máquina Servidor.
+	-ip: direccion ip de la máquina objetivo.
+	-sip: dirección ip de la máquina Servidor.
+	-cip: dirección ip de la máquina Cliente. 
+	-client/-server/-all: indica el tipo de información que se desea mostrar.
+		-client: sólo mostrará información obtenida de mensajes tipo Client Hello.
+		-server: sólo mostrará información obtenida de mensajes tipo Server Hello.
+		-all: mostrará iformación tanto de mensajes tipo Client Hello como Server Hello.
+	-c: mostrará la información de los certificados obtenidos en los mensajes Certificate.
+	-pcap: habilitar el modo Verbose para su funcionamiento a partir de una captura tipo pcap. 
+	       Deberá incluir la ruta absoluta del fichero.pcap.
+	       
+> La flag -ip incluye el filtro "ip.addr". Se usa cuando se desea obtener todos los mensajes 
+  Client Hello (-client), Server Hello (-server), Crertificate (-c), etc, que entran o salen de 
+  esta dirección.       
+
+> El nombre del archivo json generado por el modo Verbose incluye la fecha y hora actual del momento en 
+  el que se generó. Se genera un solo fichero json para cada ejecución del modo Verbose con toda la 
+  información del tráfico captado durante la ejecución. Este fichero se generará al interrumpir tlshark 
+  con Ctrl+c o al terminar, si se usa la opción pcap.
+
+
+Ejemplos
+--------
+$ tlshark -verbose -all -c -ip 192.168.24.2
+$ tlshark -verbose -server -c -sip 10.219.2.56 -i any
+$ tlshark -verbose -all -c -cip 192.168.74.132 -pcap /path/to/capture.pcap
+
+
+
+
+MODO CERLOG: [-i, -sp, -sip, -cip, -pcap]
+------------
+Este modo permite olfatear el tráfico intercambiado durante el tls handhake y almacena la información 
+diferenciando cada conexión con el ID correspondiente. La secuencia estará completa cuando el modo Cerlog 
+haya detectado la secuencia Client Hello --> Server Hello --> Certificate para una misma conexión. En este 
+momento Jackal obtiene la cadena de certificados clonados y se generará un archivo.json con la información 
+correspondiente a esta conexión. Esta es la información necesaria para el funcionamiento del modo Rogue. 
+
+Banderas disponibles:
+	-i: interfaz de la maquina cliente, es decir, la maquina desde la que se está ejecutando TLShark. 
+	    Debe usarse el formato de tshark para indicar el argumento de esta bandera. eth0 por defecto.
+	-sp: puerto TCP de la máquina Servidor.
+	-sip: dirección ip de la máquina Servidor.
+	-cip: dirección ip de la máquina Cliente. 
+	-pcap: habilitar el modo Cerlog para su funcionamiento a partir de una captura tipo pcap. 
+	       Deberá incluir la ruta absoluta del fichero.pcap.
+
+> El valor ID que aparece en el nombre y el contenido de los archivos json del modo Cerlog es una variable 
+  que se usa en todo el programa para identificar una conexión y coincide con el valor del puerto del 
+  cliente.
+  
+> El fichero json se generará al interrumpir el proceso mediante Ctrl+c o bien al terminar si está 
+  habilitado el funcionamiento mediante pcap. En cualquier caso se recomienda interrumpir el proceso 
+  tras el mensaje SUCCESFULL END! para que el json correspondiente contenga toda la información.
+
+
+Ejemplos
+--------
+$ tlshark -cerlog 
+$ tlshark -cerlog -i any -sp 80 -cip 192.168.74.134 -pcap path/to/file.pcap 
+
+
+
+
+MODO ROGUE: [-json]
+-----------
+Este modo recoge la información alojada en los archivos json almacenados en la carpeta cerlog_json y 
+muestra los servidores que se encuentran disponibles para su suplantación. Una vez elegido uno, Rogue 
+levanta un servidor usando la información alojada en el archivo json correspondiente (versión TLS, 
+cipher suite y puerto de servidor) con el certificado clonado y una clave privada asociada. 
+
+Banderas disponibles:
+	-json: permite cargar la información de un servidor desde un fichero json específico,
+	       con el formato generado por Cerlog.
+
+> Este modo usa los ficheros json generados por el modo Cerlog, por tanto, este debe ejecutarse 
+  previamente para poder llenar la carpeta cerlog_json o bien cargar la información a partir de 
+  un fichero json. 
+
+
+Ejemplos
+--------
+$ tlshark -rogue
+$ tlshark -rogue -json /path/to/cerlog_ID_1352.json
+
+
+
+
+MODO MITMPROXY TRANSPARENTE: [-i, -json, -certfrom_tlshark/-certfrom_mitmproxy/-certfrom_path]
+----------------------------
+Este modo utiliza información alojada en los archivos json almacenados en la carpeta cerlog_json para
+levantar un proxy transparente e interceptar una comunicación Cliente-Servidor mediante un ataque 
+man-in-the-middle. Se mostrarán los servidores disponibles para interceptar y una vez elegido uno, 
+se realizarán las siguientes configuraciones.
+	1.- Se habilita el redireccionamiento del tráfico para que el proxy funcione en modo 
+	    transparente.
+	2.- Se deshabilita el uso de las rutas más cortas disponibles, evitando el proxy.
+	3.- Se toma el puerto del servidor y se habilita el redireccionamiento del tráfico recibido en 
+	    el proxy en ese puerto hacia el puerto 8080 donde se está ejecutando mitmproxy. 
+	4.- Se levanta el proxy con el certificado elegido según las banderas
+	    -certfrom_tlshark/-certfrom_mitmproxy/-certfrom_path.
+	
+Banderas disponibles.
+	-i: indica la interfaz sobre la que se realiza el redireccionamiento de puertos. 
+	    eth0 por defecto.
+	-json: permite cargar la información para levantar un proxy desde un fichero json específico,
+	       con el formato generado por Cerlog.
+	-certfrom_tlshark: selecciona el certificado o cadena de certificados clonados y llave privada 
+		           generados por Apostille.
+	-certfrom_mitmproxy: selecciona un certificado autofirmado con la CA de mitmproxy y su clave
+	                     privada correspondiente.
+	-certfrom_path: selecciona un certificado y su clave a partir de una ruta específica.
+	
+> Este modo usa los ficheros json generados por el modo Cerlog, por tanto, este debe ejecutarse 
+  previamente para poder llenar la carpeta cerlog_json o bien cargar la información a partir de 
+  un fichero json. 
+
+> Al levantar el proxy se ejecutará la interfaz propia de mitmproxy (ver manual de mitmproxy para
+  la gestión de esta interfaz). En ella se puede visualizar el tráfico que pasa a través del proxy.
+  
+> Al cerrar la interfaz de mitmproxy (q) se apagará el proxy y se desharán las configuraciones de 
+  redireccionamiento realizadas al principio de este modo.
+ 
+> Este modo debe ejecutarse con permisos de administrador, de lo contrario, los pedirá durante la 
+  ejecución.
+  
+> Si se usa la bandera -certfrom_path debe proporcionarse la ruta absoluta del certificado. Este 
+  debe encontrarse en formato .pem y tener la siguiente apariencia.
+  
+  -----BEGIN PRIVATE KEY-----
+	<private key>
+  -----END PRIVATE KEY-----
+  -----BEGIN CERTIFICATE-----
+	<cert>
+  -----END CERTIFICATE-----
+
+> Como usuario, debe asegurarse que la máquina cliente redirecciona el tráfico a través del proxy,
+  reasignando la puerta de enlace determinada.
+
+Ejemplos
+--------
+$ sudo tlshark -trp_mitmproxy -certfrom_mitmproxy
+$ sudo tlshark -trp_mitmproxy -certfrom_path path/to/certificate.pem -json path/to/cerlog_ID_1352.json
+
+
+
+
+MODO MITMPROXY REVERSO: [-url]
+-----------------------
+Este modo es similar al modo mitmproxy transparente, pero levanta el un proxy en reverso en lugar 
+de uno transparente. Además la información para levantar este proxy es recogida directamente
+de la url especificada por la bandera -url.
+
+Banderas disponibles:
+	-url: indica la url de donde deber recogerse la información para levantar el proxy.
+
+> Como usuario, debe asegurarse que la máquina cliente redirecciona el tráfico a través del proxy,
+  por ejemplo, modificando el fichero /etc/hosts.
+
+
+Ejemplos
+--------
+$ tlshark -rev_mitmproxy -url www.example_url.com
+
+
+
+
+MODO DETECTOR DE VERSION TLS: [-json]
+-----------------------------
+Este modo permite descubrir la versión TLS usada por un host. Su algoritmo levanta un servidor a
+partir de la información alojada en los archivos json almacenados en la carpeta cerlog_json con 
+la versión tlsv1.3 y espera una conexión. Cuando un host desea conectarse a este servidor, se 
+detecta si se genera un error por incompatibilidad de versión TLS. Se cierra el servidor, se 
+levanta uno nuevo con una versión TLS menor y se vuelve a esperar conexión para detectar la 
+compatibilidad TLS y asi con todas las versiones TLS (tlsv1.3, tlsv1.2, tlsv1.1 y tlsv1). 
+Finalmente se imprime en pantalla una tabla con los resultados.
+
+Banderas disponibles:
+	-json: permite levantar el servidor a partir de la información alojada en un fichero
+	       json, en el formato generado por Cerlog.
+
+Ejemplos
+--------
+$ tlshark -tls_vdetector
+
+
+
+
+Consejos
+--------
+Puede usar el modo Verbose y Cerlog simultáneamente ejecutando tlshark en diferentes terminales. 
+Esto le permitirá visualizar la información que se va recolectando para la suplantación mediante el 
+modo Cerlog al mismo tiempo que puede ver el tráfico subyacente de forma más detallada mediante el 
+modo Verbose.
+
+
